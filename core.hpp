@@ -1,8 +1,9 @@
 #ifndef _YOLOX_CPP_CORE_HPP
 #define _YOLOX_CPP_CORE_HPP
 
+#include <cstdint>
 #include <opencv2/core/types.hpp>
-#include <opencv2/opencv.hpp>
+     #include <opencv2/opencv.hpp>
 
 /**
  * @brief Define names based depends on Unicode path support
@@ -41,100 +42,133 @@
         virtual std::vector<Object> inference(const cv::Mat &frame) = 0;
 
     protected:
-        int input_w_;
-        int input_h_;
+        int input_w_ = 416;
+        int input_h_ = 416;
         float nms_thresh_;
         float bbox_conf_thresh_;
         int num_classes_;
         bool p6_;
         std::string model_version_;
+        // const std::vector<float> mean_ = {0.485, 0.456, 0.406};
+        // const std::vector<float> std_ = {0.229, 0.224, 0.225};
+        const std::vector<int> strides_ = {8, 16, 32};
+
+
         float input_scale_;
         int input_zero_point_;
         float output_scale_;
         int output_zero_point_;
 
-        const std::vector<int> strides_ = {8, 16, 32};
-        const std::vector<int> strides_p6_ = {8, 16, 32, 64};
         std::vector<GridAndStride> grid_strides_;
 
-        cv::Mat static_resize(const cv::Mat &img)
-        {
-            const float r = std::min(
-                static_cast<float>(input_w_) / static_cast<float>(img.cols),
-                static_cast<float>(input_h_) / static_cast<float>(img.rows));
-            const int unpad_w = r * img.cols;
-            const int unpad_h = r * img.rows;
-            cv::Mat re(unpad_h, unpad_w, CV_8UC3);
-            cv::resize(img, re, re.size());
-            cv::Mat out(input_h_, input_w_, CV_8UC3, cv::Scalar(114, 114, 114));
-            re.copyTo(out(cv::Rect(0, 0, re.cols, re.rows)));
-            return out;
-        }
 
-        // for NCHW
+
+
 void blobFromImage(const cv::Mat &img, int8_t *blob_data)
 {
     const size_t channels = 3;
     const size_t img_h = img.rows;
     const size_t img_w = img.cols;
     const size_t img_hw = img_h * img_w;
-    
+
+    // 指向各个通道的指针
     int8_t *blob_data_ch0 = blob_data;
     int8_t *blob_data_ch1 = blob_data + img_hw;
     int8_t *blob_data_ch2 = blob_data + img_hw * 2;
-    
-    std::cout << "Quantization params - scale: " << input_scale_ 
-              << ", zero_point: " << input_zero_point_ << std::endl;
-              
+
     for (size_t i = 0; i < img_hw; ++i)
     {
         const size_t src_idx = i * channels;
-        
-        // 获取原始像素值
-        float r = static_cast<float>(img.data[src_idx + 0]);
-        float g = static_cast<float>(img.data[src_idx + 1]);
-        float b = static_cast<float>(img.data[src_idx + 2]);
-        
-        // 正确的量化公式：q = round(x / scale) + zero_point
-        // 其中x是归一化后的值 [0,1]
-        float r_norm = r / 255.0f;
-        float g_norm = g / 255.0f;
-        float b_norm = b / 255.0f;
-        
-        int32_t qr = static_cast<int32_t>(std::round(r_norm / input_scale_)) + input_zero_point_;
-        int32_t qg = static_cast<int32_t>(std::round(g_norm / input_scale_)) + input_zero_point_;
-        int32_t qb = static_cast<int32_t>(std::round(b_norm / input_scale_)) + input_zero_point_;
-        
-        // 限制在int8范围内
-        blob_data_ch0[i] = std::clamp(qr, -128, 127);
-        blob_data_ch1[i] = std::clamp(qg, -128, 127);
-        blob_data_ch2[i] = std::clamp(qb, -128, 127);
-        
-        // 打印第一个像素的详细计算过程
-        if (i == 340) {
-            std::cout << "\nFirst pixel quantization details:" << std::endl;
-            std::cout << "Original values - R: " << r << ", G: " << g << ", B: " << b << std::endl;
-            std::cout << "Normalized values - R: " << r_norm << ", G: " << g_norm << ", B: " << b_norm << std::endl;
-            std::cout << "Intermediate values (before zero_point) - R: " << std::round(r_norm / input_scale_) 
-                      << ", G: " << std::round(g_norm / input_scale_) 
-                      << ", B: " << std::round(b_norm / input_scale_) << std::endl;
-            std::cout << "Final quantized values - R: " << (int)blob_data_ch0[i] 
-                      << ", G: " << (int)blob_data_ch1[i] 
-                      << ", B: " << (int)blob_data_ch2[i] << std::endl;
-            
-            // 验证反量化
-            float dequant_r = (static_cast<float>(blob_data_ch0[i]) - input_zero_point_) * input_scale_;
-            std::cout << "Dequantized R: " << dequant_r << " (should be close to " << r_norm << ")" << std::endl;
+
+        // 直接将uint8转换为int8 (减去128)
+        blob_data_ch0[i] = static_cast<int8_t>(img.data[src_idx + 0] - 128);
+        blob_data_ch1[i] = static_cast<int8_t>(img.data[src_idx + 1] - 128);
+        blob_data_ch2[i] = static_cast<int8_t>(img.data[src_idx + 2] - 128);
+
+        //#ifdef DEBUG
+        // 调试打印
+        if (i == 342)
+        {
+            std::cout << "First pixel conversion:" << std::endl;
+            std::cout << "Original RGB: " 
+                     << (int)img.data[src_idx + 0] << ", "
+                     << (int)img.data[src_idx + 1] << ", "
+                     << (int)img.data[src_idx + 2] << std::endl;
+            std::cout << "Converted int8: "
+                     << (int)blob_data_ch0[i] << ", "
+                     << (int)blob_data_ch1[i] << ", "
+                     << (int)blob_data_ch2[i] << std::endl;
+        }
+        //#endif
+    }
+}
+
+
+void blobFromImage_NHWC(const cv::Mat &img, int8_t *blob_data)
+{
+    const size_t channels = 3;
+    const size_t img_h = img.rows;
+    const size_t img_w = img.cols;
+
+    for (size_t h = 0; h < img_h; ++h)
+    {
+        for (size_t w = 0; w < img_w; ++w)
+        {
+            const size_t src_idx = (h * img_w + w) * channels;
+            const size_t dst_idx = (h * img_w + w) * channels;
+
+            // 直接将uint8转换为int8
+            blob_data[dst_idx + 0] = static_cast<int8_t>(img.data[src_idx + 0] - 128);
+            blob_data[dst_idx + 1] = static_cast<int8_t>(img.data[src_idx + 1] - 128);
+            blob_data[dst_idx + 2] = static_cast<int8_t>(img.data[src_idx + 2] - 128);
         }
     }
 }
 
-// 2. 添加量化辅助函数
-inline int8_t quantize_to_int8(float value, float scale, int zero_point)
+
+
+
+
+inline static int32_t __clip(float val, float min, float max)
 {
-    int32_t quantized = std::round(value / scale) + zero_point;
-    return static_cast<int8_t>(std::clamp(quantized, -128, 127));
+    float f = val <= min ? min : (val >= max ? max : val);
+    return f;
 }
+
+static int8_t qnt_f32_to_affine(float f32, int32_t zp, float scale)
+{
+    float dst_val = (f32 / scale) + zp;
+    int8_t res = (int8_t)__clip(dst_val, -128, 127);
+    return res;
+}
+
+static float deqnt_affine_to_f32(int8_t qnt, int32_t zp, float scale) { return ((float)qnt - (float)zp) * scale; }
+
+        cv::Mat static_resize(const cv::Mat &img)
+        {
+        
+            int input_w = input_w_; 
+            int input_h = input_h_; 
+
+            float r = std::min(input_w / (img.cols * 1.0), input_h / (img.rows * 1.0));
+            int new_w = r * img.cols;
+            int new_h = r * img.rows;
+
+        
+            cv::Mat resized_img;
+            cv::resize(img, resized_img, cv::Size(new_w, new_h));
+
+      
+            cv::Mat dst(input_h, input_w, CV_8UC3, cv::Scalar(114, 114, 114));
+            resized_img.copyTo(dst(cv::Rect(0, 0, new_w, new_h)));
+            cv::imshow("resized", dst);
+            cv::waitKey(0);
+            return dst;
+        }
+
+        // for NCHW
+     
+
 
 
         void generate_grids_and_stride(const int target_w, const int target_h, const std::vector<int> &strides, std::vector<GridAndStride> &grid_strides)
@@ -154,118 +188,61 @@ inline int8_t quantize_to_int8(float value, float scale, int zero_point)
             }
         }
 
-inline int8_t qnt_f32_to_affine(float threshold, int32_t zp, float scale) {
-    return static_cast<int8_t>(std::round(threshold / scale) + zp);
-}
+        void generate_yolox_proposals(const std::vector<GridAndStride> &grid_strides, int8_t *feat_ptr, const float prob_threshold, std::vector<Object> &objects)
+        {
+            const int num_anchors = grid_strides.size();
+            objects.clear();
 
-// 添加反量化函数
-inline float deqnt_affine_to_f32(int8_t value, int32_t zp, float scale) {
-    return (static_cast<float>(value) - zp) * scale;
-}
+            for (int anchor_idx = 0; anchor_idx < num_anchors; ++anchor_idx)
+            {
+                const int grid0 = grid_strides[anchor_idx].grid0;
+                const int grid1 = grid_strides[anchor_idx].grid1;
+                const int stride = grid_strides[anchor_idx].stride;
 
-// 修改generate_yolox_proposals函数
-void generate_yolox_proposals(
-    const std::vector<GridAndStride> &grid_strides,
-    const int8_t *feat_ptr,
-    const float prob_threshold,
-    std::vector<Object> &objects)
-{
-    objects.clear();
-    
-    // 将浮点阈值转换为int8阈值
-    int8_t threshold_i8 = qnt_f32_to_affine(prob_threshold, output_zero_point_, output_scale_);
-    
-    // 计算每个特征图的大小
-    for(auto stride : strides_) {
-        int grid_h = input_h_ / stride;
-        int grid_w = input_w_ / stride;
-        int grid_len = grid_h * grid_w;
-        
-        std::cout << "Processing grid: " << grid_h << "x" << grid_w << " stride: " << stride << std::endl;
-        
-        // 遍历网格
-        for(int i = 0; i < grid_h; i++) {
-            for(int j = 0; j < grid_w; j++) {
-                int offset = i * grid_w + j;
+                const int basic_pos = anchor_idx * (num_classes_ + 5);
+
+                int class_id = 0;
+                float max_class_score = 0.0f;
                 
-                // 先检查objectness分数
-                int8_t box_confidence = feat_ptr[4 * grid_len + offset];
-                if(box_confidence >= threshold_i8) {
-                    // 查找最大类别分数
-                    const int8_t* scores_ptr = feat_ptr + 5 * grid_len + offset;
-                    int8_t max_score = scores_ptr[0];
-                    int max_class_id = 0;
-                    
-                    for(int c = 1; c < num_classes_; c++) {
-                        int8_t score = scores_ptr[c * grid_len];
-                        if(score > max_score) {
-                            max_score = score;
-                            max_class_id = c;
-                        }
-                    }
-                    
-                    // 如果类别分数也超过阈值
-                    if(max_score >= threshold_i8) {
-                        // 解码box坐标
-                        const int8_t* box_ptr = feat_ptr + offset;
-                        float x = deqnt_affine_to_f32(box_ptr[0], output_zero_point_, output_scale_);
-                        float y = deqnt_affine_to_f32(box_ptr[grid_len], output_zero_point_, output_scale_);
-                        float w = deqnt_affine_to_f32(box_ptr[2 * grid_len], output_zero_point_, output_scale_);
-                        float h = deqnt_affine_to_f32(box_ptr[3 * grid_len], output_zero_point_, output_scale_);
-                        
-                        // 计算中心点坐标
-                        x = (x + j) * stride;
-                        y = (y + i) * stride;
-                        // 计算宽高
-                        w = std::exp(w) * stride;
-                        h = std::exp(h) * stride;
-                        
-                        // 转换为左上角坐标
-                        x -= (w / 2.0f);
-                        y -= (h / 2.0f);
-                        
-                        // 计算最终的置信度分数
-                        float confidence = deqnt_affine_to_f32(box_confidence, output_zero_point_, output_scale_);
-                        float class_score = deqnt_affine_to_f32(max_score, output_zero_point_, output_scale_);
-                        float final_score = confidence * class_score;
-                        
-                        if(i == 0 && j == 0) {  // 打印第一个检测框的调试信息
-                            std::cout << "Debug box:" << std::endl;
-                            std::cout << "  raw confidence: " << (int)box_confidence 
-                                      << " -> " << confidence << std::endl;
-                            std::cout << "  raw class score: " << (int)max_score 
-                                      << " -> " << class_score << std::endl;
-                            std::cout << "  final score: " << final_score << std::endl;
-                            std::cout << "  box: " << x << "," << y << "," << w << "," << h << std::endl;
-                        }
-                        
-                        // 添加到结果中
-                        Object obj;
-                        obj.rect.x = x;
-                        obj.rect.y = y;
-                        obj.rect.width = w;
-                        obj.rect.height = h;
-                        obj.label = max_class_id;
-                        obj.prob = final_score;
-                        objects.push_back(obj);
-                    }
-                }
-            }
-        }
-    }
-    
-    std::cout << "Found " << objects.size() << " objects" << std::endl;
-}
-// 添加sigmoid辅助函数
-inline float sigmoid(float x) {
-    return 1.0f / (1.0f + std::exp(-x));
-}
+                    float box_objectness = deqnt_affine_to_f32(feat_ptr[basic_pos + 4], output_zero_point_, output_scale_);
+                    auto begin = feat_ptr + (basic_pos + 5);
+                    auto end = feat_ptr + (basic_pos + 5 + num_classes_);
+                    auto max_elem = std::max_element(begin, end);
+                    class_id = max_elem - begin;
+                    max_class_score = deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_) * box_objectness;
+                    //float class_score = sigmoid(deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_));
+         
+                if(box_objectness > 0.1) {  // 修改这个阈值来查看不同的值
+                    std::cout << "Raw objectness value: " << (int)feat_ptr[basic_pos + 4] << std::endl;
+                    std::cout << "Dequantized objectness: " << box_objectness << std::endl;
+                //     std::cout << "Raw class score: " << (int)*max_elem << std::endl;
+                //     std::cout << "Dequantized class score: " << deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_) << std::endl;
+                //     std::cout << "Final score: " << max_class_score << std::endl;
+                 }
 
-// 4. 添加反量化辅助函数
-inline float dequantize_int8(int8_t value, float scale, int zero_point)
-{
-    return static_cast<float>(value - zero_point) * scale;
-}
+                if (box_objectness > prob_threshold)
+                {   
+                    // yolox/models/yolo_head.py decode logic
+                    //  outputs[..., :2] = (outputs[..., :2] + grids) * strides
+                    //  outputs[..., 2:4] = torch.exp(outputs[..., 2:4]) * strides
+                    const float x_center = (deqnt_affine_to_f32(feat_ptr[basic_pos + 0], output_zero_point_, output_scale_) + grid0) * stride;
+                    const float y_center = (deqnt_affine_to_f32(feat_ptr[basic_pos + 1], output_zero_point_, output_scale_) + grid1) * stride;
+                    const float w = exp(deqnt_affine_to_f32(feat_ptr[basic_pos + 2], output_zero_point_, output_scale_)) * stride;
+                    const float h = exp(deqnt_affine_to_f32(feat_ptr[basic_pos + 3], output_zero_point_, output_scale_)) * stride;
+                    const float x0 = x_center - w * 0.5f;
+                    const float y0 = y_center - h * 0.5f;
+
+                    Object obj;
+                    obj.rect.x = x0;
+                    obj.rect.y = y0;
+                    obj.rect.width = w;
+                    obj.rect.height = h;
+                    obj.label = class_id;
+                    obj.prob = max_class_score;
+                    objects.push_back(obj);
+                }
+            } // point anchor loop
+        }
 
         float intersection_area(const Object &a, const Object &b)
         {
@@ -311,53 +288,51 @@ inline float dequantize_int8(int8_t value, float scale, int zero_point)
             }
         }
 
-void decode_outputs(
-    const int8_t *prob,
-    const std::vector<GridAndStride> &grid_strides,
-    std::vector<Object> &objects,
-    const float bbox_conf_thresh,
-    const float scale,
-    const int img_w,
-    const int img_h)
-{
-    std::vector<Object> proposals;
-    generate_yolox_proposals(grid_strides, prob, bbox_conf_thresh, proposals);
-    
-    std::cout << "Proposals before NMS: " << proposals.size() << std::endl;
-    
-    std::sort(proposals.begin(), proposals.end(),
-              [](const Object& a, const Object& b) { return a.prob > b.prob; });
+        void decode_outputs(int8_t *prob, const std::vector<GridAndStride> &grid_strides,
+                            std::vector<Object> &objects, const float bbox_conf_thresh,
+                            const float scale, const int img_w, const int img_h)
+        {
 
-    std::vector<int> picked;
-    nms_sorted_bboxes(proposals, picked, nms_thresh_);
+            std::vector<Object> proposals;
+            generate_yolox_proposals(grid_strides, prob, bbox_conf_thresh, proposals);
 
-    int count = picked.size();
-    objects.resize(count);
-    
-    // 调整到原始图像尺寸
-    for (int i = 0; i < count; i++) {
-        objects[i] = proposals[picked[i]];
-        
-        // 缩放到原始图像大小
-        float scale_x = static_cast<float>(img_w) / input_w_;
-        float scale_y = static_cast<float>(img_h) / input_h_;
-        
-        objects[i].rect.x *= scale_x;
-        objects[i].rect.y *= scale_y;
-        objects[i].rect.width *= scale_x;
-        objects[i].rect.height *= scale_y;
-        
-        // 确保框在图像范围内
-        objects[i].rect.x = std::max(0.0f, objects[i].rect.x);
-        objects[i].rect.y = std::max(0.0f, objects[i].rect.y);
-        objects[i].rect.width = std::min(objects[i].rect.width, 
-                                       static_cast<float>(img_w) - objects[i].rect.x);
-        objects[i].rect.height = std::min(objects[i].rect.height, 
-                                        static_cast<float>(img_h) - objects[i].rect.y);
-    }
-    
-    std::cout << "Objects after NMS: " << objects.size() << std::endl;
-}
+            std::sort(
+                proposals.begin(), proposals.end(),
+                [](const Object &a, const Object &b)
+                {
+                    return a.prob > b.prob; // descent
+                });
+
+            std::vector<int> picked;
+            nms_sorted_bboxes(proposals, picked, nms_thresh_);
+
+            int count = picked.size();
+            objects.resize(count);
+            const float max_x = static_cast<float>(img_w - 1);
+            const float max_y = static_cast<float>(img_h - 1);
+
+            for (int i = 0; i < count; ++i)
+            {
+                objects[i] = proposals[picked[i]];
+
+                // adjust offset to original unpadded
+                float x0 = objects[i].rect.x / scale;
+                float y0 = objects[i].rect.y / scale;
+                float x1 = (objects[i].rect.x + objects[i].rect.width) / scale;
+                float y1 = (objects[i].rect.y + objects[i].rect.height) / scale;
+
+                // clip
+                x0 = std::max(std::min(x0, max_x), 0.f);
+                y0 = std::max(std::min(y0, max_y), 0.f);
+                x1 = std::max(std::min(x1, max_x), 0.f);
+                y1 = std::max(std::min(y1, max_y), 0.f);
+
+                objects[i].rect.x = x0;
+                objects[i].rect.y = y0;
+                objects[i].rect.width = x1 - x0;
+                objects[i].rect.height = y1 - y0;
+            }
+        }
     };
 
 #endif
