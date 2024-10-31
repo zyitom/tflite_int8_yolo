@@ -32,45 +32,32 @@
             std::string msg = "Failed to allocate tensors.";
             throw std::runtime_error(msg.c_str());
         }
-
-        {
-            TfLiteTensor *tensor = this->interpreter_->input_tensor(0);
-            std::cout << "input:" << std::endl;
-            std::cout << " name: " << tensor->name << std::endl;
-
-                // NCHW
-                this->input_h_ = tensor->dims->data[2];
-                this->input_w_ = tensor->dims->data[3];
-
-            std::cout << " shape:" << std::endl;
-
-            std::cout << " input_h: " << this->input_h_ << std::endl;
-            std::cout << " input_w: " << this->input_w_ << std::endl;
-            std::cout << " tensor_type: " << tensor->type << std::endl;
+{
+            TfLiteTensor* tensor = this->interpreter_->input_tensor(0);
+            input_scale_ = tensor->params.scale;
+            input_zero_point_ = tensor->params.zero_point;
+            
+            std::cout << "Input quantization params:" << std::endl;
+            std::cout << " scale: " << input_scale_ << std::endl;
+            std::cout << " zero_point: " << input_zero_point_ << std::endl;
         }
-
+        
+        // 获取输出张量的量化参数
         {
-            TfLiteTensor *tensor = this->interpreter_->output_tensor(0);
-            std::cout << "output:" << std::endl;
-            std::cout << " name: " << tensor->name << std::endl;
-            std::cout << " shape:" << std::endl;
-     
+            TfLiteTensor* tensor = this->interpreter_->output_tensor(0);
+            output_scale_ = tensor->params.scale;
+            output_zero_point_ = tensor->params.zero_point;
             
-                this->output_size_ = sizeof(float);
-            
-            for (int i = 0; i < tensor->dims->size; i++)
-            {
-                this->output_size_ *= tensor->dims->data[i];
-                std::cout << "   - " << tensor->dims->data[i] << std::endl;
-            }
-            std::cout << " tensor_type: " << tensor->type << std::endl;
+            std::cout << "Output quantization params:" << std::endl;
+            std::cout << " scale: " << output_scale_ << std::endl;
+            std::cout << " zero_point: " << output_zero_point_ << std::endl;
         }
 
         // Prepare GridAndStrides
- 
-            generate_grids_and_stride(this->input_w_, this->input_h_, this->strides_p6_, this->grid_strides_);
-        
- 
+
+
+            std::cout << "input_w_: " << this->input_w_ << std::endl;
+            std::cout << "input_h_: " << this->input_h_ << std::endl;
             generate_grids_and_stride(this->input_w_, this->input_h_, this->strides_, this->grid_strides_);
         
     }
@@ -78,68 +65,70 @@
     {
         //TfLiteXNNPackDelegateDelete(this->delegate_);
     }
-    std::vector<Object> YoloXTflite::inference(const cv::Mat &frame)
+  std::vector<Object> YoloXTflite::inference(const cv::Mat &frame)
 {
-    // 添加输入检查
-    if (frame.empty()) {
-        std::cerr << "Input frame is empty!" << std::endl;
-        return std::vector<Object>();
-    }
+    std::cout << "\n=== Starting Inference ===" << std::endl;
     
-    // preprocess
+    // 预处理
     cv::Mat pr_img = static_resize(frame);
+    std::cout << "Resized image: " << pr_img.size() << std::endl;
     
-    // 添加预处理后的图像检查
-    if (pr_img.empty()) {
-        std::cerr << "Resized image is empty!" << std::endl;
-        return std::vector<Object>();
-    }
-    std::cout << "Preprocessed image size: " << pr_img.size() << std::endl;
-    cv::imshow("Preprocessed Image", pr_img);
-    cv::waitKey(0);
-    // 获取和检查输入张量
-    float *input_blob = this->interpreter_->typed_input_tensor<float>(0);
-    if (input_blob == nullptr) {
+    // 获取输入张量
+    int8_t* input_blob = interpreter_->typed_input_tensor<int8_t>(0);
+    if (!input_blob) {
         std::cerr << "Failed to get input tensor!" << std::endl;
         return std::vector<Object>();
     }
-
-    // 添加更多的调试信息
-    std::cout << "Processing image with size: " << pr_img.size() 
-              << " channels: " << pr_img.channels() << std::endl;
-
-
     
+    // 处理图像
+    if(is_nchw_){
+        std::cout << "Using NCHW format" << std::endl;
         blobFromImage(pr_img, input_blob);
+    } else {
+        std::cout << "Using NHWC format" << std::endl;
+        blobFromImage_NHWC(pr_img, input_blob);
+    }
     
-
-    // inference
-    TfLiteStatus ret = this->interpreter_->Invoke();
-    if (ret != TfLiteStatus::kTfLiteOk)
-    {
-        std::cerr << "Failed to invoke." << std::endl;
+    // 执行推理
+    std::cout << "Invoking interpreter..." << std::endl;
+    if (interpreter_->Invoke() != kTfLiteOk) {
+        std::cerr << "Failed to invoke interpreter" << std::endl;
         return std::vector<Object>();
     }
-
-    // postprocess
-    const float scale = std::min(
-        static_cast<float>(this->input_w_) / static_cast<float>(frame.cols),
-        static_cast<float>(this->input_h_) / static_cast<float>(frame.rows)
-    );
     
-    // 检查输出张量
-    float* output_tensor = this->interpreter_->typed_output_tensor<float>(0);
-    if (output_tensor == nullptr) {
+    // 获取输出
+    int8_t* output = interpreter_->typed_output_tensor<int8_t>(0);
+    if (!output) {
         std::cerr << "Failed to get output tensor!" << std::endl;
         return std::vector<Object>();
     }
+    
+    // 打印一些输出值
+    std::cout << "\n=== Sample Output Values ===" << std::endl;
+    for (int i = 0; i < 10; ++i) {
+        float dequant_val = deqnt_affine_to_f32(output[i], output_zero_point_, output_scale_);
+        std::cout << "Output[" << i << "] = " << (int)output[i] 
+                 << " (dequantized: " << dequant_val << ")" << std::endl;
+    }
+    // 检查模型是否正确加载
+std::cout << "Model input shape: " 
+          << interpreter_->input_tensor(0)->dims->data[0] << "x"
+          << interpreter_->input_tensor(0)->dims->data[1] << "x"
+          << interpreter_->input_tensor(0)->dims->data[2] << "x"
+          << interpreter_->input_tensor(0)->dims->data[3] << std::endl;
 
+// 检查量化参数
+std::cout << "Input scale: " << input_scale_ << std::endl;
+std::cout << "Input zero point: " << input_zero_point_ << std::endl;
+std::cout << "Output scale: " << output_scale_ << std::endl;
+std::cout << "Output zero point: " << output_zero_point_ << std::endl;
+    // 后处理
     std::vector<Object> objects;
-    decode_outputs(
-        output_tensor,
-        this->grid_strides_, objects,
-        this->bbox_conf_thresh_, scale, frame.cols, frame.rows);
-
+    const float scale = std::min(input_w_ / (float)frame.cols, input_h_ / (float)frame.rows);
+    decode_outputs(output, grid_strides_, objects, bbox_conf_thresh_, scale, frame.cols, frame.rows);
+    
+    std::cout << "Found " << objects.size() << " objects" << std::endl;
+    
     return objects;
 }
 
@@ -147,15 +136,15 @@
 int main(int argc, char* argv[]) {
     try {
         // 配置参数
-        //const std::string model_path = "/home/zyi/Downloads/yolox_nano_model_int8.tflite";  // 需要替换为实际的模型路径
-        const char* model_path = "/home/zyi/Downloads/yolox_nano.tflite";  // 需要替换为实际的模型路径
+        const std::string model_path = "/home/zyi/Downloads/yolox_nano_ti_lite/yolox_nano_ti_lite_full_integer_quant.tflite";  // 需要替换为实际的模型路径
+        //const char* model_path = "/home/zyi/Downloads/yolox_nano.tflite";  // 需要替换为实际的模型路径
         const int num_threads = 4;                    // 线程数
         const float nms_threshold = 0.45f;            // NMS阈值
-        const float confidence_threshold = 0.1f;      // 置信度阈值
+        const float confidence_threshold = 0.3f;      // 置信度阈值
         const std::string model_version = "0.1.1rc0";    // 模型版本
         const int num_classes = 80;                   // COCO数据集类别数
         const bool p6 = false;                        // 是否使用P6
-        const bool is_nchw = true;                   // 是否使用NCHW格式
+        const bool is_nchw = false;                   // 是否使用NCHW格式
         
         // 初始化YoloX检测器
         YoloXTflite detector(

@@ -1,8 +1,9 @@
 #ifndef _YOLOX_CPP_CORE_HPP
 #define _YOLOX_CPP_CORE_HPP
 
+#include <cstdint>
 #include <opencv2/core/types.hpp>
-
+     #include <opencv2/opencv.hpp>
 
 /**
  * @brief Define names based depends on Unicode path support
@@ -41,8 +42,8 @@
         virtual std::vector<Object> inference(const cv::Mat &frame) = 0;
 
     protected:
-        int input_w_;
-        int input_h_;
+        int input_w_ = 416;
+        int input_h_ = 416;
         float nms_thresh_;
         float bbox_conf_thresh_;
         int num_classes_;
@@ -50,49 +51,124 @@
         std::string model_version_;
         // const std::vector<float> mean_ = {0.485, 0.456, 0.406};
         // const std::vector<float> std_ = {0.229, 0.224, 0.225};
-        const std::vector<float> std255_inv_ = {
-            1.0 / (255.0 * 0.229), 1.0 / (255.0 * 0.224), 1.0 / (255.0 * 0.225)};
-        const std::vector<float> mean_std_ = {
-            -0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225};
         const std::vector<int> strides_ = {8, 16, 32};
-        const std::vector<int> strides_p6_ = {8, 16, 32, 64};
+
+
+        float input_scale_;
+        int input_zero_point_;
+        float output_scale_;
+        int output_zero_point_;
+
         std::vector<GridAndStride> grid_strides_;
+
+
+
+
+void blobFromImage(const cv::Mat &img, int8_t *blob_data)
+{
+    const size_t channels = 3;
+    const size_t img_h = img.rows;
+    const size_t img_w = img.cols;
+    const size_t img_hw = img_h * img_w;
+
+    // 指向各个通道的指针
+    int8_t *blob_data_ch0 = blob_data;
+    int8_t *blob_data_ch1 = blob_data + img_hw;
+    int8_t *blob_data_ch2 = blob_data + img_hw * 2;
+
+    for (size_t i = 0; i < img_hw; ++i)
+    {
+        const size_t src_idx = i * channels;
+
+        // 直接将uint8转换为int8 (减去128)
+        blob_data_ch0[i] = static_cast<int8_t>(img.data[src_idx + 0] - 128);
+        blob_data_ch1[i] = static_cast<int8_t>(img.data[src_idx + 1] - 128);
+        blob_data_ch2[i] = static_cast<int8_t>(img.data[src_idx + 2] - 128);
+
+        //#ifdef DEBUG
+        // 调试打印
+        if (i == 342)
+        {
+            std::cout << "First pixel conversion:" << std::endl;
+            std::cout << "Original RGB: " 
+                     << (int)img.data[src_idx + 0] << ", "
+                     << (int)img.data[src_idx + 1] << ", "
+                     << (int)img.data[src_idx + 2] << std::endl;
+            std::cout << "Converted int8: "
+                     << (int)blob_data_ch0[i] << ", "
+                     << (int)blob_data_ch1[i] << ", "
+                     << (int)blob_data_ch2[i] << std::endl;
+        }
+        //#endif
+    }
+}
+
+
+void blobFromImage_NHWC(const cv::Mat &img, int8_t *blob_data)
+{
+    const size_t channels = 3;
+    const size_t img_h = img.rows;
+    const size_t img_w = img.cols;
+
+    for (size_t h = 0; h < img_h; ++h)
+    {
+        for (size_t w = 0; w < img_w; ++w)
+        {
+            const size_t src_idx = (h * img_w + w) * channels;
+            const size_t dst_idx = (h * img_w + w) * channels;
+
+            // 直接将uint8转换为int8
+            blob_data[dst_idx + 0] = static_cast<int8_t>(img.data[src_idx + 0] - 128);
+            blob_data[dst_idx + 1] = static_cast<int8_t>(img.data[src_idx + 1] - 128);
+            blob_data[dst_idx + 2] = static_cast<int8_t>(img.data[src_idx + 2] - 128);
+        }
+    }
+}
+
+
+
+
+
+inline static int32_t __clip(float val, float min, float max)
+{
+    float f = val <= min ? min : (val >= max ? max : val);
+    return f;
+}
+
+static int8_t qnt_f32_to_affine(float f32, int32_t zp, float scale)
+{
+    float dst_val = (f32 / scale) + zp;
+    int8_t res = (int8_t)__clip(dst_val, -128, 127);
+    return res;
+}
+
+static float deqnt_affine_to_f32(int8_t qnt, int32_t zp, float scale) { return ((float)qnt - (float)zp) * scale; }
 
         cv::Mat static_resize(const cv::Mat &img)
         {
-            const float r = std::min(
-                static_cast<float>(input_w_) / static_cast<float>(img.cols),
-                static_cast<float>(input_h_) / static_cast<float>(img.rows));
-            const int unpad_w = r * img.cols;
-            const int unpad_h = r * img.rows;
-            cv::Mat re(unpad_h, unpad_w, CV_8UC3);
-            cv::resize(img, re, re.size());
-            cv::Mat out(input_h_, input_w_, CV_8UC3, cv::Scalar(114, 114, 114));
-            re.copyTo(out(cv::Rect(0, 0, re.cols, re.rows)));
-            return out;
+        
+            int input_w = input_w_; 
+            int input_h = input_h_; 
+
+            float r = std::min(input_w / (img.cols * 1.0), input_h / (img.rows * 1.0));
+            int new_w = r * img.cols;
+            int new_h = r * img.rows;
+
+        
+            cv::Mat resized_img;
+            cv::resize(img, resized_img, cv::Size(new_w, new_h));
+
+      
+            cv::Mat dst(input_h, input_w, CV_8UC3, cv::Scalar(114, 114, 114));
+            resized_img.copyTo(dst(cv::Rect(0, 0, new_w, new_h)));
+            cv::imshow("resized", dst);
+            cv::waitKey(0);
+            return dst;
         }
 
         // for NCHW
-        void blobFromImage(const cv::Mat &img, float *blob_data)
-        {
-            const size_t channels = 3;
-            const size_t img_h = img.rows;
-            const size_t img_w = img.cols;
-            const size_t img_hw = img_h * img_w;
-            float *blob_data_ch0 = blob_data;
-            float *blob_data_ch1 = blob_data + img_hw;
-            float *blob_data_ch2 = blob_data + img_hw * 2;
-            // HWC -> CHW
+     
 
-                for (size_t i = 0; i < img_hw; ++i)
-                {
-                    const size_t src_idx = i * channels;
-                    blob_data_ch0[i] = static_cast<float>(img.data[src_idx + 0]);
-                    blob_data_ch1[i] = static_cast<float>(img.data[src_idx + 1]);
-                    blob_data_ch2[i] = static_cast<float>(img.data[src_idx + 2]);
-                }
-            
-        }
 
 
         void generate_grids_and_stride(const int target_w, const int target_h, const std::vector<int> &strides, std::vector<GridAndStride> &grid_strides)
@@ -112,7 +188,7 @@
             }
         }
 
-        void generate_yolox_proposals(const std::vector<GridAndStride> &grid_strides, const float *feat_ptr, const float prob_threshold, std::vector<Object> &objects)
+        void generate_yolox_proposals(const std::vector<GridAndStride> &grid_strides, int8_t *feat_ptr, const float prob_threshold, std::vector<Object> &objects)
         {
             const int num_anchors = grid_strides.size();
             objects.clear();
@@ -127,23 +203,32 @@
 
                 int class_id = 0;
                 float max_class_score = 0.0f;
-                {
-                    const float box_objectness = feat_ptr[basic_pos + 4];
+                
+                    float box_objectness = deqnt_affine_to_f32(feat_ptr[basic_pos + 4], output_zero_point_, output_scale_);
                     auto begin = feat_ptr + (basic_pos + 5);
                     auto end = feat_ptr + (basic_pos + 5 + num_classes_);
                     auto max_elem = std::max_element(begin, end);
                     class_id = max_elem - begin;
-                    max_class_score = (*max_elem) * box_objectness;
-                }
-                if (max_class_score > prob_threshold)
-                {
+                    max_class_score = deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_) * box_objectness;
+                    //float class_score = sigmoid(deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_));
+         
+                if(box_objectness > 0.1) {  // 修改这个阈值来查看不同的值
+                    std::cout << "Raw objectness value: " << (int)feat_ptr[basic_pos + 4] << std::endl;
+                    std::cout << "Dequantized objectness: " << box_objectness << std::endl;
+                //     std::cout << "Raw class score: " << (int)*max_elem << std::endl;
+                //     std::cout << "Dequantized class score: " << deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_) << std::endl;
+                //     std::cout << "Final score: " << max_class_score << std::endl;
+                 }
+
+                if (box_objectness > prob_threshold)
+                {   
                     // yolox/models/yolo_head.py decode logic
                     //  outputs[..., :2] = (outputs[..., :2] + grids) * strides
                     //  outputs[..., 2:4] = torch.exp(outputs[..., 2:4]) * strides
-                    const float x_center = (feat_ptr[basic_pos + 0] + grid0) * stride;
-                    const float y_center = (feat_ptr[basic_pos + 1] + grid1) * stride;
-                    const float w = exp(feat_ptr[basic_pos + 2]) * stride;
-                    const float h = exp(feat_ptr[basic_pos + 3]) * stride;
+                    const float x_center = (deqnt_affine_to_f32(feat_ptr[basic_pos + 0], output_zero_point_, output_scale_) + grid0) * stride;
+                    const float y_center = (deqnt_affine_to_f32(feat_ptr[basic_pos + 1], output_zero_point_, output_scale_) + grid1) * stride;
+                    const float w = exp(deqnt_affine_to_f32(feat_ptr[basic_pos + 2], output_zero_point_, output_scale_)) * stride;
+                    const float h = exp(deqnt_affine_to_f32(feat_ptr[basic_pos + 3], output_zero_point_, output_scale_)) * stride;
                     const float x0 = x_center - w * 0.5f;
                     const float y0 = y_center - h * 0.5f;
 
@@ -203,7 +288,7 @@
             }
         }
 
-        void decode_outputs(const float *prob, const std::vector<GridAndStride> &grid_strides,
+        void decode_outputs(int8_t *prob, const std::vector<GridAndStride> &grid_strides,
                             std::vector<Object> &objects, const float bbox_conf_thresh,
                             const float scale, const int img_w, const int img_h)
         {
