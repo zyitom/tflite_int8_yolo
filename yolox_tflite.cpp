@@ -27,43 +27,6 @@
             std::string msg = "Failed to SetNumThreads.";
             throw std::runtime_error(msg.c_str());
         }
-
-        // XNNPACK Delegate
-        // auto xnnpack_options = TfLiteXNNPackDelegateOptionsDefault();
-        // xnnpack_options.num_threads = num_threads;
-        // this->delegate_ = TfLiteXNNPackDelegateCreate(&xnnpack_options);
-        // status = this->interpreter_->ModifyGraphWithDelegate(this->delegate_);
-        // if (status != TfLiteStatus::kTfLiteOk)
-        // {
-        //     std::string msg = "Failed to ModifyGraphWithDelegate.";
-        //     throw std::runtime_error(msg.c_str());
-        // }
-
-        // // GPU Delegate
-        // auto gpu_options = TfLiteGpuDelegateOptionsV2Default();
-        // gpu_options.inference_preference = TFLITE_GPU_INFERENCE_PREFERENCE_SUSTAINED_SPEED;
-        // gpu_options.inference_priority1 = TFLITE_GPU_INFERENCE_PRIORITY_MIN_LATENCY;
-        // this->delegate_ = TfLiteGpuDelegateV2Create(&gpu_options);
-        // status = this->interpreter_->ModifyGraphWithDelegate(this->delegate_);
-        // if (status != TfLiteStatus::kTfLiteOk)
-        // {
-        //     std::cerr << "Failed to ModifyGraphWithDelegate." << std::endl;
-        //     exit(1);
-        // }
-
-        // // NNAPI Delegate
-        // tflite::StatefulNnApiDelegate::Options nnapi_options;
-        // nnapi_options.execution_preference = tflite::StatefulNnApiDelegate::Options::kSustainedSpeed;
-        // nnapi_options.allow_fp16 = true;
-        // nnapi_options.disallow_nnapi_cpu = true;
-        // this->delegate_ = new tflite::StatefulNnApiDelegate(nnapi_options);
-        // status = this->interpreter_->ModifyGraphWithDelegate(this->delegate_);
-        // if (status != TfLiteStatus::kTfLiteOk)
-        // {
-        //     std::cerr << "Failed to ModifyGraphWithDelegate." << std::endl;
-        //     exit(1);
-        // }
-
         if (this->interpreter_->AllocateTensors() != TfLiteStatus::kTfLiteOk)
         {
             std::string msg = "Failed to allocate tensors.";
@@ -74,29 +37,13 @@
             TfLiteTensor *tensor = this->interpreter_->input_tensor(0);
             std::cout << "input:" << std::endl;
             std::cout << " name: " << tensor->name << std::endl;
-            if (this->is_nchw_ == true)
-            {
+
                 // NCHW
                 this->input_h_ = tensor->dims->data[2];
                 this->input_w_ = tensor->dims->data[3];
-            }
-            else
-            {
-                // NHWC
-                this->input_h_ = tensor->dims->data[1];
-                this->input_w_ = tensor->dims->data[2];
-            }
 
             std::cout << " shape:" << std::endl;
-        if (tensor->type == kTfLiteInt8)
-            {
-                this->input_size_ = sizeof(int8_t);
-                // 获取量化参数
-                float input_scale = tensor->params.scale;
-                int input_zero_point = tensor->params.zero_point;
-                std::cout << " scale: " << input_scale << std::endl;
-                std::cout << " zero_point: " << input_zero_point << std::endl;
-            }
+
             std::cout << " input_h: " << this->input_h_ << std::endl;
             std::cout << " input_w: " << this->input_w_ << std::endl;
             std::cout << " tensor_type: " << tensor->type << std::endl;
@@ -107,14 +54,10 @@
             std::cout << "output:" << std::endl;
             std::cout << " name: " << tensor->name << std::endl;
             std::cout << " shape:" << std::endl;
-            if (tensor->type == kTfLiteUInt8)
-            {
-                this->output_size_ = sizeof(uint8_t);
-            }
-            else
-            {
+     
+            
                 this->output_size_ = sizeof(float);
-            }
+            
             for (int i = 0; i < tensor->dims->size; i++)
             {
                 this->output_size_ *= tensor->dims->data[i];
@@ -124,14 +67,12 @@
         }
 
         // Prepare GridAndStrides
-        if(this->p6_)
-        {
+ 
             generate_grids_and_stride(this->input_w_, this->input_h_, this->strides_p6_, this->grid_strides_);
-        }
-        else
-        {
+        
+ 
             generate_grids_and_stride(this->input_w_, this->input_h_, this->strides_, this->grid_strides_);
-        }
+        
     }
     YoloXTflite::~YoloXTflite()
     {
@@ -167,14 +108,10 @@
     std::cout << "Processing image with size: " << pr_img.size() 
               << " channels: " << pr_img.channels() << std::endl;
 
-    if (this->is_nchw_ == true)
-    {
+
+    
         blobFromImage(pr_img, input_blob);
-    }
-    else
-    {
-        blobFromImage_nhwc(pr_img, input_blob);
-    }
+    
 
     // inference
     TfLiteStatus ret = this->interpreter_->Invoke();

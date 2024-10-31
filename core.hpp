@@ -83,19 +83,7 @@
             float *blob_data_ch1 = blob_data + img_hw;
             float *blob_data_ch2 = blob_data + img_hw * 2;
             // HWC -> CHW
-            if (this->model_version_ == "0.1.0")
-            {
-                for (size_t i = 0; i < img_hw; ++i)
-                {
-                    // blob = (img / 255.0 - mean) / std
-                    const size_t src_idx = i * channels;
-                    blob_data_ch0[i] = static_cast<float>(img.data[src_idx + 0]) * this->std255_inv_[0] + this->mean_std_[0];
-                    blob_data_ch1[i] = static_cast<float>(img.data[src_idx + 1]) * this->std255_inv_[1] + this->mean_std_[1];
-                    blob_data_ch2[i] = static_cast<float>(img.data[src_idx + 2]) * this->std255_inv_[2] + this->mean_std_[2];
-                }
-            }
-            else
-            {
+
                 for (size_t i = 0; i < img_hw; ++i)
                 {
                     const size_t src_idx = i * channels;
@@ -103,28 +91,9 @@
                     blob_data_ch1[i] = static_cast<float>(img.data[src_idx + 1]);
                     blob_data_ch2[i] = static_cast<float>(img.data[src_idx + 2]);
                 }
-            }
+            
         }
 
-        // for NHWC
-        void blobFromImage_nhwc(const cv::Mat &img, float *blob_data)
-        {
-            const size_t channels = 3;
-            cv::Mat img_f32;
-            img.convertTo(img_f32, CV_32FC3);
-            if (this->model_version_ == "0.1.0")
-            {
-                std::vector<cv::Mat> img_f32_split(3);
-                cv::split(img_f32, img_f32_split);
-                for (size_t i = 0; i < channels; ++i)
-                {
-                    img_f32_split[i] *= this->std255_inv_[i];
-                    img_f32_split[i] += this->mean_std_[i];
-                }
-                cv::merge(img_f32_split, img_f32);
-            }
-            memcpy(blob_data, img_f32.data, img.rows * img.cols * channels * sizeof(float));
-        }
 
         void generate_grids_and_stride(const int target_w, const int target_h, const std::vector<int> &strides, std::vector<GridAndStride> &grid_strides)
         {
