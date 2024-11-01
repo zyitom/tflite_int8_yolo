@@ -158,7 +158,7 @@ int main(int argc, char* argv[]) {
         );
         
         // 读取图像
-        cv::Mat frame = cv::imread("/home/zyi/Downloads/test_coco/000000011051.jpg");  // 需要替换为实际的图像路径
+        cv::Mat frame = cv::imread("../000000011051.jpg");  // 需要替换为实际的图像路径
         if (frame.empty()) {
             std::cerr << "Error: Unable to read the image!" << std::endl;
             return -1;
