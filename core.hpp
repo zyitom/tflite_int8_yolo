@@ -67,7 +67,7 @@
 void blobFromImage(const cv::Mat &img, int8_t *blob_data)
 {
     const size_t channels = 3;
-    const size_t img_h = img.rows;
+    const size_t img_h = img.rows;  
     const size_t img_w = img.cols;
     const size_t img_hw = img_h * img_w;
 
@@ -76,39 +76,35 @@ void blobFromImage(const cv::Mat &img, int8_t *blob_data)
     int8_t *blob_data_ch1 = blob_data + img_hw;
     int8_t *blob_data_ch2 = blob_data + img_hw * 2;
 
+    const float scale = 1.0f / 255.0f;
+ 
+
     for (size_t i = 0; i < img_hw; ++i)
     {
         const size_t src_idx = i * channels;
+        
+        // 对每个通道记得减去均值
+        float ch0 = img.data[src_idx + 0] -128  ;
+        float ch1 = img.data[src_idx + 1] -128 ; 
+        float ch2 = img.data[src_idx + 2] -128 ; 
 
-        // 直接将uint8转换为int8 (减去128)
-        blob_data_ch0[i] = static_cast<int8_t>(img.data[src_idx + 0] - 128);
-        blob_data_ch1[i] = static_cast<int8_t>(img.data[src_idx + 1] - 128);
-        blob_data_ch2[i] = static_cast<int8_t>(img.data[src_idx + 2] - 128);
+        // 量化到int8
+        blob_data_ch0[i] = qnt_f32_to_affine(ch0, input_zero_point_, input_scale_);
+        blob_data_ch1[i] = qnt_f32_to_affine(ch1, input_zero_point_, input_scale_);
+        blob_data_ch2[i] = qnt_f32_to_affine(ch2, input_zero_point_, input_scale_);
 
-        //#ifdef DEBUG
-        // 调试打印
-        if (i == 342)
-        {
-            std::cout << "First pixel conversion:" << std::endl;
-            std::cout << "Original RGB: " 
-                     << (int)img.data[src_idx + 0] << ", "
-                     << (int)img.data[src_idx + 1] << ", "
-                     << (int)img.data[src_idx + 2] << std::endl;
-            std::cout << "Converted int8: "
-                     << (int)blob_data_ch0[i] << ", "
-                     << (int)blob_data_ch1[i] << ", "
-                     << (int)blob_data_ch2[i] << std::endl;
-        }
-        //#endif
+
     }
 }
-
-
 void blobFromImage_NHWC(const cv::Mat &img, int8_t *blob_data)
 {
     const size_t channels = 3;
     const size_t img_h = img.rows;
     const size_t img_w = img.cols;
+
+    const float scale = 1.0f ;
+    const std::vector<float> mean = {0.485f, 0.456f, 0.406f};
+    const std::vector<float> std = {0.229f, 0.224f, 0.225f};
 
     for (size_t h = 0; h < img_h; ++h)
     {
@@ -117,14 +113,16 @@ void blobFromImage_NHWC(const cv::Mat &img, int8_t *blob_data)
             const size_t src_idx = (h * img_w + w) * channels;
             const size_t dst_idx = (h * img_w + w) * channels;
 
-            // 直接将uint8转换为int8
-            blob_data[dst_idx + 0] = static_cast<int8_t>(img.data[src_idx + 0] - 128);
-            blob_data[dst_idx + 1] = static_cast<int8_t>(img.data[src_idx + 1] - 128);
-            blob_data[dst_idx + 2] = static_cast<int8_t>(img.data[src_idx + 2] - 128);
+            float ch0 = img.data[src_idx + 0] * scale;
+            float ch1 = img.data[src_idx + 1] * scale;
+            float ch2 = img.data[src_idx + 2] * scale;
+
+            blob_data[dst_idx + 0] = qnt_f32_to_affine(ch0, input_zero_point_, input_scale_);
+            blob_data[dst_idx + 1] = qnt_f32_to_affine(ch1, input_zero_point_, input_scale_);
+            blob_data[dst_idx + 2] = qnt_f32_to_affine(ch2, input_zero_point_, input_scale_);
         }
     }
 }
-
 
 
 
@@ -212,14 +210,7 @@ static float deqnt_affine_to_f32(int8_t qnt, int32_t zp, float scale) { return (
                     max_class_score = deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_) * box_objectness;
                     //float class_score = sigmoid(deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_));
          
-                if(box_objectness > 0.1) {  // 修改这个阈值来查看不同的值
-                    std::cout << "Raw objectness value: " << (int)feat_ptr[basic_pos + 4] << std::endl;
-                    std::cout << "Dequantized objectness: " << box_objectness << std::endl;
-                //     std::cout << "Raw class score: " << (int)*max_elem << std::endl;
-                //     std::cout << "Dequantized class score: " << deqnt_affine_to_f32(*max_elem, output_zero_point_, output_scale_) << std::endl;
-                //     std::cout << "Final score: " << max_class_score << std::endl;
-                 }
-
+    
                 if (box_objectness > prob_threshold)
                 {   
                     // yolox/models/yolo_head.py decode logic

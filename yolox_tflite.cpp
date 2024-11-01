@@ -1,5 +1,6 @@
 #include "yolox_tflite.hpp"
 #include <opencv2/highgui.hpp>
+#include <string>
 
 
     YoloXTflite::YoloXTflite(const file_name_t &path_to_model, int num_threads,
@@ -136,15 +137,16 @@ std::cout << "Output zero point: " << output_zero_point_ << std::endl;
 int main(int argc, char* argv[]) {
     try {
         // 配置参数
-        const std::string model_path = "/home/zyi/Downloads/yolox_nano_ti_lite/yolox_nano_ti_lite_full_integer_quant.tflite";  // 需要替换为实际的模型路径
+        //const std::string model_path = "/home/zyi/Downloads/yolox_nano_ti_lite/yolox_nano_ti_lite_full_integer_quant.tflite";  // 需要替换为实际的模型路径
+        const std::string model_path = "../model_int8.tflite";
         //const char* model_path = "/home/zyi/Downloads/yolox_nano.tflite";  // 需要替换为实际的模型路径
         const int num_threads = 4;                    // 线程数
         const float nms_threshold = 0.45f;            // NMS阈值
-        const float confidence_threshold = 0.3f;      // 置信度阈值
+        const float confidence_threshold = 0.4f;      // 置信度阈值
         const std::string model_version = "0.1.1rc0";    // 模型版本
         const int num_classes = 80;                   // COCO数据集类别数
         const bool p6 = false;                        // 是否使用P6
-        const bool is_nchw = false;                   // 是否使用NCHW格式
+        const bool is_nchw = true;                   // 是否使用NCHW格式
         
         // 初始化YoloX检测器
         YoloXTflite detector(
@@ -159,7 +161,7 @@ int main(int argc, char* argv[]) {
         );
         
         // 读取图像
-        cv::Mat frame = cv::imread("/home/zyi/miniconda3/envs/new/lib/python3.10/site-packages/ultralytics/assets/zidane.jpg");  // 需要替换为实际的图像路径
+        cv::Mat frame = cv::imread("/home/zyi/Downloads/test_coco/000000011051.jpg");  // 需要替换为实际的图像路径
         if (frame.empty()) {
             std::cerr << "Error: Unable to read the image!" << std::endl;
             return -1;
