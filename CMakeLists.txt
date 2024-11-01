@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 设置TensorFlow路径
-set(TENSORFLOW_ROOT "/home/zyi/tensorflow")
+set(TENSORFLOW_ROOT "/home/z2/tensorflow")
 set(TFLITE_BUILD_PATH "${TENSORFLOW_ROOT}/bazel-bin/tensorflow/lite")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # 设置Flatbuffers路径（使用bazel缓存中的路径）

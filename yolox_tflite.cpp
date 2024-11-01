@@ -33,7 +33,7 @@
             std::string msg = "Failed to allocate tensors.";
             throw std::runtime_error(msg.c_str());
         }
-{
+        {
             TfLiteTensor* tensor = this->interpreter_->input_tensor(0);
             input_scale_ = tensor->params.scale;
             input_zero_point_ = tensor->params.zero_point;
@@ -53,9 +53,6 @@
             std::cout << " scale: " << output_scale_ << std::endl;
             std::cout << " zero_point: " << output_zero_point_ << std::endl;
         }
-
-        // Prepare GridAndStrides
-
 
             std::cout << "input_w_: " << this->input_w_ << std::endl;
             std::cout << "input_h_: " << this->input_h_ << std::endl;
@@ -112,18 +109,18 @@
                  << " (dequantized: " << dequant_val << ")" << std::endl;
     }
     // 检查模型是否正确加载
-std::cout << "Model input shape: " 
+    std::cout << "Model input shape: " 
           << interpreter_->input_tensor(0)->dims->data[0] << "x"
           << interpreter_->input_tensor(0)->dims->data[1] << "x"
           << interpreter_->input_tensor(0)->dims->data[2] << "x"
           << interpreter_->input_tensor(0)->dims->data[3] << std::endl;
 
-// 检查量化参数
-std::cout << "Input scale: " << input_scale_ << std::endl;
-std::cout << "Input zero point: " << input_zero_point_ << std::endl;
-std::cout << "Output scale: " << output_scale_ << std::endl;
-std::cout << "Output zero point: " << output_zero_point_ << std::endl;
-    // 后处理
+
+    std::cout << "Input scale: " << input_scale_ << std::endl;
+    std::cout << "Input zero point: " << input_zero_point_ << std::endl;
+    std::cout << "Output scale: " << output_scale_ << std::endl;
+    std::cout << "Output zero point: " << output_zero_point_ << std::endl;
+
     std::vector<Object> objects;
     const float scale = std::min(input_w_ / (float)frame.cols, input_h_ / (float)frame.rows);
     decode_outputs(output, grid_strides_, objects, bbox_conf_thresh_, scale, frame.cols, frame.rows);
